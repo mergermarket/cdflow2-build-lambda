@@ -56,7 +56,6 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 	}
 
 	targetInfo, err := os.Stat(config.target)
-	fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: zipping target info %q\n\n", targetInfo)
 
 	if targetInfo.IsDir() {
 		if err := zipDir(tmpfile, config.target); err != nil {
