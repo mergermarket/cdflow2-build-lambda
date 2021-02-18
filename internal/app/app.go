@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -18,7 +16,6 @@ import (
 
 // App is the application we are running.
 type App struct {
-	dockerClient *client.Client
 	S3Client     s3iface.S3API
 }
 
@@ -32,7 +29,6 @@ func (app *App) getS3Client() s3iface.S3API {
 
 // RunContext contains the context that the build container is run in.
 type RunContext struct {
-	Docker        DockerInterface
 	Bucket        string
 	Path          string
 	BuildID       string
@@ -50,20 +46,22 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 
 	fmt.Fprintf(errorStream, "\ncdflow2-build-lambda: running \n")
 
-	target := path.Join(mappedCodeDir, config.target_directory)
-	targetInfo, err := os.Stat(target)
 
-	fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: zipping target %q\n\n", config.target_directory)
+	fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: zipping target %q\n\n", config.target)
+
+	tmpfile, err := ioutil.TempFile("", "cdflow2-release-lambda-*")
 
 	if err != nil {
-		return nil, fmt.Errorf("target_directory '%s' does not exist: %w", config.target_directory, err)
+		return nil, fmt.Errorf("target_directory '%s' does not exist: %w", config.target, err)
 	}
+	targetInfo, err := os.Stat(config.target)
+
 	if targetInfo.IsDir() {
-		if err := zipDir(tmpfile, target); err != nil {
+		if err := zipDir(tmpfile, config.target); err != nil {
 			return nil, fmt.Errorf("error zipping directory: %w", err)
 		}
 	} else {
-		if err := zipFile(tmpfile, target); err != nil {
+		if err := zipFile(tmpfile, config.target); err != nil {
 			return nil, fmt.Errorf("error zipping file: %w", err)
 		}
 	}

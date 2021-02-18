@@ -90,10 +90,7 @@ func getCodeDir() string {
 func TestRun(t *testing.T) {
 	// Given
 	manifestConfig := map[string]interface{}{
-		"image":   "alpine",
-		"target":  "app",
-		"handler": "app",
-		"command": "echo test output; echo test error output >&2; cp test.txt app",
+		"target_directory":  "app",
 	}
 	s3Client := &mockedS3{}
 	application := &app.App{
@@ -103,20 +100,15 @@ func TestRun(t *testing.T) {
 	var errorBuffer bytes.Buffer
 	codeDir := getCodeDir()
 
-	var docker app.DockerInterface = nil
-	if os.Getenv("TEST_NO_DOCKER") == "true" {
-		docker = &mockedDocker{}
-	}
-
 	bucket := "test-bucket"
 	path := "foo/bar"
+	version := "2"
 
 	// When
 	metadata, err := application.Run(&app.RunContext{
-		Docker:        docker,
 		Bucket:        bucket,
 		BuildID:       "lambda",
-		CodeDir:       codeDir,
+		Version:       version,
 		MappedCodeDir: codeDir,
 		Path:          path,
 		Params:        manifestConfig,
