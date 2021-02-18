@@ -54,7 +54,9 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 	if err != nil {
 		return nil, fmt.Errorf("target_directory '%s' does not exist: %w", config.target, err)
 	}
+
 	targetInfo, err := os.Stat(config.target)
+	fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: zipping target info %q\n\n", targetInfo)
 
 	if targetInfo.IsDir() {
 		if err := zipDir(tmpfile, config.target); err != nil {
@@ -96,10 +98,7 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 }
 
 type config struct {
-	image   string
 	target  string
-	handler string
-	command []string
 }
 
 func getConfig(buildID string, params map[string]interface{}) (*config, error) {
@@ -107,9 +106,7 @@ func getConfig(buildID string, params map[string]interface{}) (*config, error) {
 	var ok bool
 	if result.target, ok = params["target_directory"].(string); !ok {
 		return nil, fmt.Errorf("unexpected type for build.%v.params.target: %T (should be string)", buildID, params["target_directory"])
-	} else {
-		return nil, fmt.Errorf("unexpected type for build.%v.params.command: %T (should be string or array of strings)", buildID, params["command"])
-	}
+	} 
 	return &result, nil
 }
 

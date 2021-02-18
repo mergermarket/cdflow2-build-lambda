@@ -6,24 +6,13 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"reflect"
-	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/mergermarket/cdflow2-build-lambda/internal/app"
 )
-
-type mockedDocker struct{}
-
-func (d *mockedDocker) RunContainer(codeDir, image string, command []string, outputStream, errorStream io.Writer) error {
-	outputStream.Write([]byte("test output\n"))
-	errorStream.Write([]byte("test error output\n"))
-	return Copy(path.Join(codeDir, "test.txt"), path.Join(codeDir, "app"))
-}
 
 // Copy source to destination.
 func Copy(source, destination string) error {
@@ -79,18 +68,10 @@ func (m *mockedS3) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, err
 	return &s3.PutObjectOutput{}, nil
 }
 
-func getCodeDir() string {
-	_, filename, _, ok := runtime.Caller(1)
-	if !ok {
-		panic("could not get filename for code dir")
-	}
-	return path.Join(path.Dir(filename), "../../test/code")
-}
-
 func TestRun(t *testing.T) {
 	// Given
 	manifestConfig := map[string]interface{}{
-		"target_directory":  "app",
+		"target_directory":  "../../test/target",
 	}
 	s3Client := &mockedS3{}
 	application := &app.App{
@@ -98,7 +79,6 @@ func TestRun(t *testing.T) {
 	}
 	var outputBuffer bytes.Buffer
 	var errorBuffer bytes.Buffer
-	codeDir := getCodeDir()
 
 	bucket := "test-bucket"
 	path := "foo/bar"
@@ -109,7 +89,6 @@ func TestRun(t *testing.T) {
 		Bucket:        bucket,
 		BuildID:       "lambda",
 		Version:       version,
-		MappedCodeDir: codeDir,
 		Path:          path,
 		Params:        manifestConfig,
 	}, &outputBuffer, &errorBuffer)
@@ -123,12 +102,6 @@ func TestRun(t *testing.T) {
 	}
 	if metadata["key"] != path {
 		t.Fatalf("expected %s, got %s", path, metadata["key"])
-	}
-	if !strings.Contains(outputBuffer.String(), "test output\n") {
-		t.Fatalf("missing output in %#v", outputBuffer.String())
-	}
-	if !strings.Contains(errorBuffer.String(), "test error output\n") {
-		t.Fatalf("missing error output in %#v", errorBuffer.String())
 	}
 	expected := map[string]string{"app": "test content"}
 	if !reflect.DeepEqual(s3Client.contents, expected) {
