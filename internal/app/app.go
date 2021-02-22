@@ -102,8 +102,10 @@ type config struct {
 
 func getConfig(buildID string, params map[string]interface{}) (*config, error) {
 	result := config{}
-	var ok bool
-	if result.target, ok = params["target_directory"].(string); !ok {
+	ok := false 
+	if _, exists := params["target_directory"] ; !exists {
+		result.target = "./target"
+	} else if result.target, ok = params["target_directory"].(string); !ok {
 		return nil, fmt.Errorf("unexpected type for build.%v.params.target: %T (should be string)", buildID, params["target_directory"])
 	} 
 	return &result, nil
@@ -159,4 +161,9 @@ func zipDir(writer io.Writer, dir string) error {
 		return err
 	}
 	return zipWriter.Close()
+}
+
+//Hello comment
+func Hello() string {
+    return "Hello, world"
 }

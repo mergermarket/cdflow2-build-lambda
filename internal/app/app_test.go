@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"regexp"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -71,7 +72,7 @@ func (m *mockedS3) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, err
 func TestRun(t *testing.T) {
 	// Given
 	manifestConfig := map[string]interface{}{
-		"target_directory":  "../../test/target",
+		"target":  "../../test/target",
 	}
 	s3Client := &mockedS3{}
 	application := &app.App{
@@ -107,4 +108,14 @@ func TestRun(t *testing.T) {
 	if !reflect.DeepEqual(s3Client.contents, expected) {
 		t.Fatalf("got %#v, expected %#v", s3Client.contents, expected)
 	}
+}
+
+
+func TestHello(t *testing.T) {
+    got := Hello()
+    want := "Hello, world"
+
+    if got != want {
+        t.Errorf("got %q want %q", got, want)
+    }
 }
