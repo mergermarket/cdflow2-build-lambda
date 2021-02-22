@@ -8,7 +8,6 @@ import (
 	"os"
 	"reflect"
 	"testing"
-	"regexp"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -72,7 +71,48 @@ func (m *mockedS3) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, err
 func TestRun(t *testing.T) {
 	// Given
 	manifestConfig := map[string]interface{}{
-		"target":  "../../test/target",
+		
+	}
+	s3Client := &mockedS3{}
+	application := &app.App{
+		S3Client: s3Client,
+	}
+	var outputBuffer bytes.Buffer
+	var errorBuffer bytes.Buffer
+
+	bucket := "test-bucket"
+	path := "foo/bar"
+	version := "2"
+
+	// When
+	metadata, err := application.Run(&app.RunContext{
+		Bucket:        bucket,
+		BuildID:       "lambda",
+		Version:       version,
+		Path:          path,
+		Params:        manifestConfig,
+	}, &outputBuffer, &errorBuffer)
+	if err != nil {
+		t.Fatalf("error in Run: %s\n  output: %q", err, errorBuffer.String())
+	}
+
+	// Then
+	if metadata["bucket"] != bucket {
+		t.Fatalf("expected %s, got %s", bucket, metadata["bucket"])
+	}
+	if metadata["key"] != path {
+		t.Fatalf("expected %s, got %s", path, metadata["key"])
+	}
+	expected := map[string]string{"app": "default test content"}
+	if !reflect.DeepEqual(s3Client.contents, expected) {
+		t.Fatalf("got %#v, expected %#v", s3Client.contents, expected)
+	}
+}
+
+func TestRunWithTestingDirectory(t *testing.T) {
+	// Given
+	manifestConfig := map[string]interface{}{
+		"target_directory":  "../../test/target",
 	}
 	s3Client := &mockedS3{}
 	application := &app.App{
@@ -108,14 +148,4 @@ func TestRun(t *testing.T) {
 	if !reflect.DeepEqual(s3Client.contents, expected) {
 		t.Fatalf("got %#v, expected %#v", s3Client.contents, expected)
 	}
-}
-
-
-func TestHello(t *testing.T) {
-    got := Hello()
-    want := "Hello, world"
-
-    if got != want {
-        t.Errorf("got %q want %q", got, want)
-    }
 }

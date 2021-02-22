@@ -162,8 +162,3 @@ func zipDir(writer io.Writer, dir string) error {
 	}
 	return zipWriter.Close()
 }
-
-//Hello comment
-func Hello() string {
-    return "Hello, world"
-}
