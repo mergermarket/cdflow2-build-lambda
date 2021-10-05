@@ -113,17 +113,32 @@ func getConfig(buildID string, params map[string]interface{}) (*config, error) {
 
 func zipFile(writer io.Writer, file string) error {
 	zipWriter := zip.NewWriter(writer)
-	name := filepath.Base(file)
-	writer, err := zipWriter.Create(name)
+	
+	info, err := os.Lstat(file)
 	if err != nil {
 		return err
 	}
+
+	// 3. Create a local file header
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+
+	// set compression
+	header.Method = zip.Deflate
+
+	headerWriter, err := zipWriter.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+
 	reader, err := os.Open(file)
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
-	_, err = io.Copy(writer, reader)
+	_, err = io.Copy(headerWriter, reader)
 	if err != nil {
 		return err
 	}
@@ -133,18 +148,37 @@ func zipFile(writer io.Writer, file string) error {
 func zipDir(writer io.Writer, dir string) error {
 	zipWriter := zip.NewWriter(writer)
 	if err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return err
-		}
-		relativePath, err := filepath.Rel(dir, path)
 		if err != nil {
 			return err
 		}
 
-		writer, err := zipWriter.Create(relativePath)
+        // 3. Create a local file header
+        header, err := zip.FileInfoHeader(info)
+        if err != nil {
+            return err
+        }
+
+        // set compression
+        header.Method = zip.Deflate
+        
+		// 4. Set relative path of a file as the header name
+		header.Name, err = filepath.Rel(dir, path)
 		if err != nil {
 			return err
 		}
+        if info.IsDir() {
+            header.Name += "/"
+        }
+
+		// 5. Create writer for the file header and save content of the file
+		headerWriter, err := zipWriter.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+            return nil
+        }
 
 		reader, err := os.Open(path)
 		if err != nil {
@@ -152,7 +186,7 @@ func zipDir(writer io.Writer, dir string) error {
 		}
 		defer reader.Close()
 
-		_, err = io.Copy(writer, reader)
+		_, err = io.Copy(headerWriter, reader)
 		if err != nil {
 			return err
 		}
