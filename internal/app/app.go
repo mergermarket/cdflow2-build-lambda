@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -16,13 +15,18 @@ import (
 
 // App is the application we are running.
 type App struct {
-	S3Client     s3iface.S3API
+	S3Client s3iface.S3API
 }
 
+func (app *App) getS3Client(region string) s3iface.S3API {
+	config := &aws.Config{}
 
-func (app *App) getS3Client() s3iface.S3API {
+	if region != "" {
+		config.Region = aws.String(region)
+	}
+
 	if app.S3Client == nil {
-		app.S3Client = s3.New(session.Must(session.NewSession(&aws.Config{})))
+		app.S3Client = s3.New(session.Must(session.NewSession(config)))
 	}
 	return app.S3Client
 }
@@ -45,11 +49,9 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 	}
 
 	fmt.Fprintf(errorStream, "\ncdflow2-build-lambda: running \n")
+	fmt.Fprintf(errorStream, "\ncdflow2-build-lambda: zipping target %q\n\n", config.target)
 
-
-	fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: zipping target %q\n\n", config.target)
-
-	tmpfile, err := ioutil.TempFile("", "cdflow2-release-lambda-*")
+	tmpfile, err := os.CreateTemp("", "cdflow2-release-lambda-*")
 
 	if err != nil {
 		return nil, fmt.Errorf("target_directory '%s' does not exist: %w", config.target, err)
@@ -66,9 +68,11 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 			return nil, fmt.Errorf("error zipping file: %w", err)
 		}
 	}
+
 	if err := tmpfile.Sync(); err != nil {
 		return nil, fmt.Errorf("error syncing write on zipfile: %w", err)
 	}
+
 	if _, err := tmpfile.Seek(0, 0); err != nil {
 		return nil, fmt.Errorf("error seeking zipfile: %w", err)
 	}
@@ -76,9 +80,13 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 	bucket := context.Bucket
 	key := context.Path
 
+	if config.region != "" {
+		bucket = fmt.Sprintf("%s-%s", bucket, config.region)
+	}
+
 	fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: uploading zip to s3://%s/%s...", bucket, key)
 
-	s3client := app.getS3Client()
+	s3client := app.getS3Client(config.region)
 	if _, err := s3client.PutObject(&s3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -97,23 +105,37 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 }
 
 type config struct {
-	target  string
+	target string
+	region string
 }
 
 func getConfig(buildID string, params map[string]interface{}) (*config, error) {
-	result := config{}
-	ok := false 
-	if _, exists := params["target_directory"] ; !exists {
-		result.target = "./target"
-	} else if result.target, ok = params["target_directory"].(string); !ok {
-		return nil, fmt.Errorf("unexpected type for build.%v.params.target: %T (should be string)", buildID, params["target_directory"])
-	} 
+	result := config{
+		target: "./target",
+	}
+
+	targetDirectoryI, ok := params["target_directory"]
+	if ok {
+		result.target, ok = targetDirectoryI.(string)
+		if !ok {
+			return nil, fmt.Errorf("unexpected type for build.%v.params.target_directory: %T (should be string)", buildID, targetDirectoryI)
+		}
+	}
+
+	regionI, ok := params["region"]
+	if ok {
+		result.region, ok = regionI.(string)
+		if !ok {
+			return nil, fmt.Errorf("unexpected type for build.%v.params.region: %T (should be string)", buildID, regionI)
+		}
+	}
+
 	return &result, nil
 }
 
 func zipFile(writer io.Writer, file string) error {
 	zipWriter := zip.NewWriter(writer)
-	
+
 	info, err := os.Lstat(file)
 	if err != nil {
 		return err
@@ -152,23 +174,23 @@ func zipDir(writer io.Writer, dir string) error {
 			return err
 		}
 
-        // 3. Create a local file header
-        header, err := zip.FileInfoHeader(info)
-        if err != nil {
-            return err
-        }
+		// 3. Create a local file header
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
 
-        // set compression
-        header.Method = zip.Deflate
-        
+		// set compression
+		header.Method = zip.Deflate
+
 		// 4. Set relative path of a file as the header name
 		header.Name, err = filepath.Rel(dir, path)
 		if err != nil {
 			return err
 		}
-        if info.IsDir() {
-            header.Name += "/"
-        }
+		if info.IsDir() {
+			header.Name += "/"
+		}
 
 		// 5. Create writer for the file header and save content of the file
 		headerWriter, err := zipWriter.CreateHeader(header)
@@ -177,8 +199,8 @@ func zipDir(writer io.Writer, dir string) error {
 		}
 
 		if info.IsDir() {
-            return nil
-        }
+			return nil
+		}
 
 		reader, err := os.Open(path)
 		if err != nil {

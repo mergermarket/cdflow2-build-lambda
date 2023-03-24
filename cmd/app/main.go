@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -50,7 +49,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := ioutil.WriteFile("/release-metadata.json", data, 0644); err != nil {
+	if err := os.WriteFile("/release-metadata.json", data, 0644); err != nil {
 		log.Fatalln("error writing release metadata:", err)
 	}
 }
