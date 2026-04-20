@@ -70,12 +70,12 @@ func (m *mockedS3) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, err
 
 func TestRun(t *testing.T) {
 	// Given
-	manifestConfig := map[string]interface{}{
-		
-	}
+	manifestConfig := map[string]interface{}{}
 	s3Client := &mockedS3{}
 	application := &app.App{
-		S3Client: s3Client,
+		S3Client: map[string]s3iface.S3API{
+			"eu-west-1": s3Client,
+		},
 	}
 	var outputBuffer bytes.Buffer
 	var errorBuffer bytes.Buffer
@@ -86,11 +86,11 @@ func TestRun(t *testing.T) {
 
 	// When
 	metadata, err := application.Run(&app.RunContext{
-		Bucket:        bucket,
-		BuildID:       "lambda",
-		Version:       version,
-		Path:          path,
-		Params:        manifestConfig,
+		Bucket:  bucket,
+		BuildID: "lambda",
+		Version: version,
+		Path:    path,
+		Params:  manifestConfig,
 	}, &outputBuffer, &errorBuffer)
 	if err != nil {
 		t.Fatalf("error in Run: %s\n  output: %q", err, errorBuffer.String())
@@ -112,11 +112,13 @@ func TestRun(t *testing.T) {
 func TestRunWithTestingDirectory(t *testing.T) {
 	// Given
 	manifestConfig := map[string]interface{}{
-		"target_directory":  "../../test/target",
+		"target_directory": "../../test/target",
 	}
 	s3Client := &mockedS3{}
 	application := &app.App{
-		S3Client: s3Client,
+		S3Client: map[string]s3iface.S3API{
+			"eu-west-1": s3Client,
+		},
 	}
 	var outputBuffer bytes.Buffer
 	var errorBuffer bytes.Buffer
@@ -127,11 +129,11 @@ func TestRunWithTestingDirectory(t *testing.T) {
 
 	// When
 	metadata, err := application.Run(&app.RunContext{
-		Bucket:        bucket,
-		BuildID:       "lambda",
-		Version:       version,
-		Path:          path,
-		Params:        manifestConfig,
+		Bucket:  bucket,
+		BuildID: "lambda",
+		Version: version,
+		Path:    path,
+		Params:  manifestConfig,
 	}, &outputBuffer, &errorBuffer)
 	if err != nil {
 		t.Fatalf("error in Run: %s\n  output: %q", err, errorBuffer.String())
@@ -145,6 +147,49 @@ func TestRunWithTestingDirectory(t *testing.T) {
 		t.Fatalf("expected %s, got %s", path, metadata["key"])
 	}
 	expected := map[string]string{"app": "test content"}
+	if !reflect.DeepEqual(s3Client.contents, expected) {
+		t.Fatalf("got %#v, expected %#v", s3Client.contents, expected)
+	}
+}
+func TestRunMultRegion(t *testing.T) {
+	// Given
+	manifestConfig := map[string]interface{}{
+		"regions": []interface{}{"eu-west-1", "us-east-1"},
+	}
+	s3Client := &mockedS3{}
+	application := &app.App{
+		S3Client: map[string]s3iface.S3API{
+			"eu-west-1": s3Client,
+			"us-east-1": s3Client,
+		},
+	}
+	var outputBuffer bytes.Buffer
+	var errorBuffer bytes.Buffer
+
+	bucket := "test-bucket"
+	path := "foo/bar"
+	version := "2"
+
+	// When
+	metadata, err := application.Run(&app.RunContext{
+		Bucket:  bucket,
+		BuildID: "lambda",
+		Version: version,
+		Path:    path,
+		Params:  manifestConfig,
+	}, &outputBuffer, &errorBuffer)
+	if err != nil {
+		t.Fatalf("error in Run: %s\n  output: %q", err, errorBuffer.String())
+	}
+
+	// Then
+	if metadata["bucket"] != bucket {
+		t.Fatalf("expected %s, got %s", bucket, metadata["bucket"])
+	}
+	if metadata["key"] != path {
+		t.Fatalf("expected %s, got %s", path, metadata["key"])
+	}
+	expected := map[string]string{"app": "default test content"}
 	if !reflect.DeepEqual(s3Client.contents, expected) {
 		t.Fatalf("got %#v, expected %#v", s3Client.contents, expected)
 	}

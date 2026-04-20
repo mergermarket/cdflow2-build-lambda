@@ -1,0 +1,1 @@
+docker build -t mergermarket/cdflow2-build-lambda . 

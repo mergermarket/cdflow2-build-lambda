@@ -15,7 +15,7 @@ import (
 
 // App is the application we are running.
 type App struct {
-	S3Client s3iface.S3API
+	S3Client map[string]s3iface.S3API
 }
 
 func (app *App) getS3Client(region string) s3iface.S3API {
@@ -26,9 +26,13 @@ func (app *App) getS3Client(region string) s3iface.S3API {
 	}
 
 	if app.S3Client == nil {
-		app.S3Client = s3.New(session.Must(session.NewSession(config)))
+		app.S3Client = make(map[string]s3iface.S3API)
 	}
-	return app.S3Client
+
+	if app.S3Client[region] == nil {
+		app.S3Client[region] = s3.New(session.Must(session.NewSession(config)))
+	}
+	return app.S3Client[region]
 }
 
 // RunContext contains the context that the build container is run in.
@@ -73,40 +77,53 @@ func (app *App) Run(context *RunContext, outputStream, errorStream io.Writer) (m
 		return nil, fmt.Errorf("error syncing write on zipfile: %w", err)
 	}
 
-	if _, err := tmpfile.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("error seeking zipfile: %w", err)
-	}
-
-	bucket := context.Bucket
-	key := context.Path
-
 	if config.region != "" {
-		bucket = fmt.Sprintf("%s-%s", bucket, config.region)
+		config.regions = append(config.regions, config.region)
+	} else {
+		config.regions = append(config.regions, "eu-west-1")
 	}
 
-	fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: uploading zip to s3://%s/%s...", bucket, key)
+	output := map[string]string{}
 
-	s3client := app.getS3Client(config.region)
-	if _, err := s3client.PutObject(&s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   tmpfile,
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "\n\n")
-		return nil, fmt.Errorf("error uploading to s3: %w", err)
+	for _, region := range config.regions {
+		bucket := context.Bucket
+		key := context.Path
+		output_bucket_key := "bucket"
+
+		if region != "" && region != "eu-west-1" {
+			bucket = fmt.Sprintf("%s-%s", bucket, region)
+			output_bucket_key = fmt.Sprintf("bucket_%s", region)
+		}
+
+		if _, err := tmpfile.Seek(0, 0); err != nil {
+			return nil, fmt.Errorf("error seeking zipfile: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "\ncdflow2-build-lambda: uploading zip to s3://%s/%s...", bucket, key)
+
+		s3client := app.getS3Client(region)
+		if _, err := s3client.PutObject(&s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   tmpfile,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "\n\n")
+			return nil, fmt.Errorf("error uploading to s3: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "\ndone.\n\n")
+
+		output[output_bucket_key] = bucket
+		output["key"] = key
 	}
 
-	fmt.Fprintf(os.Stderr, "\ndone.\n\n")
-
-	return map[string]string{
-		"bucket": bucket,
-		"key":    key,
-	}, nil
+	return output, nil
 }
 
 type config struct {
-	target string
-	region string
+	target  string
+	region  string
+	regions []string
 }
 
 func getConfig(buildID string, params map[string]interface{}) (*config, error) {
@@ -127,6 +144,17 @@ func getConfig(buildID string, params map[string]interface{}) (*config, error) {
 		result.region, ok = regionI.(string)
 		if !ok {
 			return nil, fmt.Errorf("unexpected type for build.%v.params.region: %T (should be string)", buildID, regionI)
+		}
+	}
+
+	regionsI, ok := params["regions"]
+	if ok {
+		for _, regionI := range regionsI.([]interface{}) {
+			region, ok := regionI.(string)
+			if !ok {
+				return nil, fmt.Errorf("unexpected type for build.%v.params.regions: %T (should be []string)", buildID, regionsI)
+			}
+			result.regions = append(result.regions, region)
 		}
 	}
 
